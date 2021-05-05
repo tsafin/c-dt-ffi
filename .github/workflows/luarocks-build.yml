@@ -1,0 +1,49 @@
+name: Build LuaRocks module for Tarantool
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    # See: https://docs.github.com/en/actions/configuring-and-managing-workflows/configuring-a-workflow#configuring-a-build-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: checkout c-dt-ffi
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Install tarantool build prerequisites for Mac
+        if: runner.os == 'macOS'
+        run: |
+          brew install msgpuck luajit luarocks
+
+      - name: Install tarantool build prerequisites for Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y luarocks libmsgpuck-dev libluajit-5.1-dev
+
+      - name: Install luacheck
+        run: |
+          sudo luarocks install luacheck
+
+
+      - name: Check via luacheck
+        run: |
+          luacheck --codes .
+
+      - name: luarocks make and pack
+        run: |
+          luarocks make --local
+          luarocks pack --local c-dt-ffi
+
+      - name: publishing linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v2
+        with:
+          name: c-dt-ffi-scm-1.all.rock
+          path: c-dt-ffi-scm-1.all.rock
