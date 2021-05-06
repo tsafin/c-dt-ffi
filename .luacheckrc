@@ -19,6 +19,8 @@ ignore = {
     "431",
     -- Shadowing an upvalue argument.
     "432",
+    -- line contains only whitespace
+    "611",
 }
 
 include_files = {
