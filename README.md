@@ -16,46 +16,30 @@ tarantool> cdt = require 'c-dt-ffi'
 ---
 ...
 
-tarantool> cdt.parser.parse('2015-02-19T01:00:00+03:00')
+tarantool> dt1 = cdt{ year = 2020, month = 10, day = 10 }
 ---
-- sp: 1424296800
-  op: 180
-  np: 0
 ...
 
-tarantool> cdt.parser.parse('2015-02-19T01:00:00.12347474+03:00')
+tarantool> dt = cdt('2020-10-10')
 ---
-- sp: 1424296800
-  op: 180
-  np: 123474740
 ...
 
-tarantool> cdt.parser.parse('2015-02-19T01:00:00.12347474Z')
+tarantool> dt == dt1
 ---
-- sp: 1424307600
-  op: 0
-  np: 123474740
+- true
 ...
 
-tarantool> cdt.parser.parse('2015-02-19T01:00:00.12347474+0300')
+tarantool> dt = cdt('2020-10-10T12:00')
 ---
-- sp: 1424296800
-  op: 180
-  np: 123474740
 ...
 
-tarantool> cdt.parser.parse('2015-02-19T010000.12347474+0300')
+tarantool> dt1 = cdt{ year = 2020, month = 10, day = 10, hour = 12, minute = 0 }
 ---
-- sp: 1424296800
-  op: 180
-  np: 123474740
 ...
 
-tarantool> cdt.parser.parse('20150219T010000.12347474+0300')
+tarantool> dt == dt1
 ---
-- sp: 1424296800
-  op: 180
-  np: 123474740
+- true
 ...
 
 ```

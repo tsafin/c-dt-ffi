@@ -189,28 +189,124 @@ local duration_mt = {
     __le = datetime_le,
 }
 
-local function datetime_new(o)
-    local dt = ffi.new(datetime_t)
-    if o then
-        dt.secs = o.secs or 0
-        dt.nsec = o.nsec or 0
-        dt.offset = o.offset or 0
-    end
-    return dt
+local function datetime_new_raw(secs, nsec, offset)
+    local dt_obj = ffi.new(datetime_t)
+    dt_obj.secs = secs
+    dt_obj.nsec = nsec
+    dt_obj.offset = offset
+    return dt_obj
 end
 
 local function mk_timestamp(dt, sp, fp, offset)
-    -- print(debug.traceback())
-    local dtVal = dt ~= nil and (cdt.dt_rdn(dt[0]) - 719163) * SECS_PER_DAY or 0
-    local spVal = sp ~= nil and sp[0] or 0
-    local fpVal = fp ~= nil and fp[0] or 0
-    local ofsVal = offset ~= nil and offset[0] or 0
-    return datetime_new {
-        secs = dtVal + spVal - ofsVal * 60,
-        nsec = fpVal,
-        offset = ofsVal,
-    }
+    local dtV = dt ~= nil and (cdt.dt_rdn(dt) - 719163) * SECS_PER_DAY or 0
+    local spV = sp ~= nil and sp or 0
+    local fpV = fp ~= nil and fp or 0
+    local ofsV = offset ~= nil and offset or 0
+    return datetime_new_raw (dtV + spV - ofsV * 60, fpV, ofsV)
 end
+
+-- create @datetime_t given object @o fields
+local function datetime_new(o)
+    if o == nil then
+        return datetime_new_raw(0, 0, 0)
+    end
+    local secs = 0
+    local nsec = 0
+    local offset = 0
+    local easy_way = false
+    local y, M, d, ymd
+    y, M, d, ymd = 0, 0, 0, false
+
+    local h, m, s, frac, hms
+    h, m, s, frac, hms = 0, 0, 0, 0, false
+
+    local dt = 0
+
+    for key, value in pairs(o) do
+        local handlers = {
+            secs = function(v)
+                secs = v
+                easy_way = true
+            end,
+
+            nsec = function(v)
+                nsec = v
+                easy_way = true
+            end,
+
+            offset = function (v)
+                offset = v
+                easy_way = true
+            end,
+
+            year = function(v)
+                assert(v > 0 and v < 10000)
+                y = v
+                ymd = true
+            end,
+
+            month = function(v)
+                assert(v > 0 and v < 12 )
+                M = v
+                ymd = true
+            end,
+
+            day = function(v)
+                assert(v > 0 and v < 32)
+                d = v
+                ymd = true
+            end,
+
+            hour = function(v)
+                assert(v >= 0 and v < 24)
+                h = v
+                hms = true
+            end,
+
+            minute = function(v)
+                assert(v >= 0 and v < 60)
+                m = v
+                hms = true
+            end,
+
+            second = function(v)
+                assert(v >= 0 and v < 61)
+                frac = v % 1
+                if frac then
+                    s = v - (v % 1)
+                else
+                    s = v
+                end
+                hms = true
+            end,
+
+            -- tz offset in minutes
+            tz = function(v)
+                assert(v >= 0 and v <= 720)
+                offset = v
+            end
+        }
+        handlers[key](value)
+    end
+
+    -- .sec, .nsec, .offset
+    if easy_way then
+        return datetime_new_raw(secs, nsec, offset)
+    end
+
+    -- .year, .month, .day
+    if ymd then
+        dt = dt + cdt.dt_from_ymd(y, M, d)
+    end
+
+    -- .hour, .minute, .second
+    if hms then
+        secs = h * 3600 + m * 60 + s
+    end
+
+    return mk_timestamp(dt, secs, frac, offset)
+end
+
 
 -- simple parse functions:
 -- parse_date/parse_time/parse_zone
@@ -227,7 +323,7 @@ local function parse_date(str)
     local dt = ffi.new('dt_t[1]')
     local rc = cdt.dt_parse_iso_date(str, #str, dt)
     assert(rc > 0)
-    return mk_timestamp(dt)
+    return mk_timestamp(dt[0])
 end
 
 --[[
@@ -245,7 +341,7 @@ local function parse_time(str)
     local fp = ffi.new('int[1]')
     local rc = cdt.dt_parse_iso_time(str, #str, sp, fp)
     assert(rc > 0)
-    return mk_timestamp(nil, sp, fp)
+    return mk_timestamp(nil, sp[0], fp[0])
 end
 
 --[[
@@ -258,7 +354,7 @@ local function parse_zone(str)
     local offset = ffi.new('int[1]')
     local rc = cdt.dt_parse_iso_zone(str, #str, offset)
     assert(rc > 0)
-    return mk_timestamp(nil, nil, nil, offset)
+    return mk_timestamp(nil, nil, nil, offset[0])
 end
 
 
@@ -273,15 +369,16 @@ local function parse_str(str)
     local dt = ffi.new('dt_t[1]')
     local len = #str
     local n = cdt.dt_parse_iso_date(str, len, dt)
+    local dt_ = dt[0]
     if n == 0 or len == n then
-        return mk_timestamp(dt)
+        return mk_timestamp(dt_)
     end
 
     str = str:sub(tonumber(n) + 1)
 
     local ch = str:sub(1,1)
     if ch ~= 't' and ch ~= 'T' and ch ~= ' ' then
-        return mk_timestamp(dt)
+        return mk_timestamp(dt_)
     end
 
     str = str:sub(2)
@@ -291,10 +388,12 @@ local function parse_str(str)
     local fp = ffi.new('int[1]')
     local n = cdt.dt_parse_iso_time(str, len, sp, fp)
     if n == 0 then
-        return mk_timestamp(dt)
+        return mk_timestamp(dt_)
     end
+    local sp_ = sp[0]
+    local fp_ = fp[0]
     if len == n then
-        return mk_timestamp(dt, sp, fp)
+        return mk_timestamp(dt_, sp_, fp_)
     end
 
     str = str:sub(tonumber(n) + 1)
@@ -308,9 +407,17 @@ local function parse_str(str)
     local offset = ffi.new('int[1]')
     n = cdt.dt_parse_iso_zone(str, len, offset)
     if n == 0 then
-        return mk_timestamp(dt, sp, fp)
+        return mk_timestamp(dt_, sp_, fp_)
     end
-    return mk_timestamp(dt, sp, fp, offset)
+    return mk_timestamp(dt_, sp_, fp_, offset[0])
+end
+
+local function datetime_from(o)
+    if o == nil or type(o) == 'table' then
+        return datetime_new(o)
+    elseif type(o) == 'string' then
+        return parse_str(o)
+    end
 end
 
 local parser = {
@@ -336,7 +443,7 @@ return setmetatable({
         parser = parser,
         format = format,
     }, {
-        __call = function(self, ...) return parse_str(...) end
+        __call = function(self, ...) return datetime_from(...) end
     }
 )
 -- vim: ts=4 sts=4 sw=4 et
