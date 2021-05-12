@@ -68,28 +68,30 @@ ffi.cdef [[
     size_t dt_parse_iso_zone_extended (const char *str, size_t len, int *offset);
     size_t dt_parse_iso_zone_lenient  (const char *str, size_t len, int *offset);
 
+    // datetime with timezone
+    struct t_datetime_tz {
+        int secs;
+        int nsec;
+        int offset;
+    };
+
+    struct t_datetime_duration {
+        int secs;
+        int nsec;
+    };
+
 ]]
 
 local SECS_PER_DAY = 86400
 local NANOS_PER_SEC = 1000000000
 
-Duration = {
-    sec = 0,
-    nsec = 0,
-}
+local datetime_t = ffi.typeof('struct t_datetime_tz')
+local duration_t = ffi.typeof('struct t_datetime_duration')
 
-function Duration:new(object)
-    object = object or {}
-    setmetatable(object, self)
-    self.__index = self
-    return object
+local function duration_new()
+    local delta = ffi.new(duration_t)
+    return delta
 end
-
-DateTime = {
-    secs = 0,
-    nsec = 0,
-    offset = 0
-}
 
 local function adjusted_secs(dt)
     return dt.secs - dt.offset * 60
@@ -98,7 +100,7 @@ end
 local function datetime_sub(lhs, rhs)
     local s1 = adjusted_secs(lhs)
     local s2 = adjusted_secs(rhs)
-    local d = Duration:new()
+    local d = duration_new()
     d.secs = s2 - s1
     d.nsec = rhs.nsec - lhs.nsec
     if d.nsec < 0 then
@@ -111,7 +113,7 @@ end
 local function datetime_add(lhs, rhs)
     local s1 = adjusted_secs(lhs)
     local s2 = adjusted_secs(rhs)
-    local d = Duration:new()
+    local d = duration_new()
     d.secs = s2 + s1
     d.nsec = rhs.nsec - lhs.nsec
     if d.nsec >= NANOS_PER_SEC then
@@ -160,26 +162,41 @@ local function datetime_serialize(self)
     return { secs = self.secs, nsec = self.nsec, tz = self.offset }
 end
 
+local function duration_tostring(self)
+    return string.format('Duration:{secs: %d. nsec: %d}', self.secs, self.nsec)
+end
+
+local function duration_serialize(self)
+    -- Allow YAML and JSON to dump objects with sockets
+    return { secs = self.secs, nsec = self.nsec }
+end
+
 local datetime_mt = {
-    __tostring = datetime_tostring,
+    -- __tostring = datetime_tostring,
     __serialize = datetime_serialize,
     __eq = datetime_eq,
     __lt = datetime_lt,
     __le = datetime_le,
     __sub = datetime_sub,
     __add = datetime_add,
-    __index = {
-        secs = 0,
-        nsec = 0,
-        offset = 0,
-    }
 }
 
-local function datetime_new(object)
-    object = object or {}
-    setmetatable(object, datetime_mt)
-    object.__index = object
-    return object
+local duration_mt = {
+    -- __tostring = duration_tostring,
+    __serialize = duration_serialize,
+    __eq = datetime_eq,
+    __lt = datetime_lt,
+    __le = datetime_le,
+}
+
+local function datetime_new(o)
+    local dt = ffi.new(datetime_t)
+    if o then
+        dt.secs = o.secs or 0
+        dt.nsec = o.nsec or 0
+        dt.offset = o.offset or 0
+    end
+    return dt
 end
 
 local function mk_timestamp(dt, sp, fp, offset)
@@ -191,12 +208,20 @@ local function mk_timestamp(dt, sp, fp, offset)
     return datetime_new {
         secs = dtVal + spVal - ofsVal * 60,
         nsec = fpVal,
-        tz = ofsVal,
+        offset = ofsVal,
     }
 end
 
 -- simple parse functions:
 -- parse_date/parse_time/parse_zone
+
+--[[
+    Basic      Extended
+    20121224   2012-12-24   Calendar date   (ISO 8601)
+    2012359    2012-359     Ordinal date    (ISO 8601)
+    2012W521   2012-W52-1   Week date       (ISO 8601)
+    2012Q485   2012-Q4-85   Quarter date
+]]
 
 local function parse_date(str)
     local dt = ffi.new('dt_t[1]')
@@ -205,6 +230,16 @@ local function parse_date(str)
     return mk_timestamp(dt)
 end
 
+--[[
+    Basic               Extended
+    T12                 N/A
+    T1230               T12:30
+    T123045             T12:30:45
+    T123045.123456789   T12:30:45.123456789
+    T123045,123456789   T12:30:45,123456789
+
+    The time designator [T] may be omitted.
+]]
 local function parse_time(str)
     local sp = ffi.new('int[1]')
     local fp = ffi.new('int[1]')
@@ -213,6 +248,12 @@ local function parse_time(str)
     return mk_timestamp(nil, sp, fp)
 end
 
+--[[
+    Basic    Extended
+    Z        N/A
+    ±hh      N/A
+    ±hhmm    ±hh:mm
+]]
 local function parse_zone(str)
     local offset = ffi.new('int[1]')
     local rc = cdt.dt_parse_iso_zone(str, #str, offset)
@@ -221,9 +262,13 @@ local function parse_zone(str)
 end
 
 
--- aggregated parse functions
--- assumes to deal with date T time time_zone
--- at once
+--[[
+    aggregated parse functions
+    assumes to deal with date T time time_zone
+    at once
+
+    date [T] time [ ] time_zone
+]]
 local function parse_str(str)
     local dt = ffi.new('dt_t[1]')
     local len = #str
@@ -268,11 +313,6 @@ local function parse_str(str)
     return mk_timestamp(dt, sp, fp, offset)
 end
 
-local function parse_call(self, ...)
-    return parse_str(...)
-end
-
-
 local parser = {
     parse = parse_str,
     parse_date = parse_date,
@@ -280,13 +320,23 @@ local parser = {
     parse_zone = parse_zone,
 }
 
+local function datetime_fmt()
+end
+
+local format = {
+    fmt = datetime_fmt
+}
+
+ffi.metatype(duration_t, duration_mt)
+ffi.metatype(datetime_t, datetime_mt)
+
 return setmetatable({
-        datetime = DateTime,
-        delta = Duration,
+        datetime = datetime_new,
+        delta = duration_new,
         parser = parser,
-    },
-    {
-        __call = parse_call,
+        format = format,
+    }, {
+        __call = function(self, ...) return parse_str(...) end
     }
 )
 -- vim: ts=4 sts=4 sw=4 et
