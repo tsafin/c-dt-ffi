@@ -115,7 +115,7 @@ local function datetime_add(lhs, rhs)
     local s2 = adjusted_secs(rhs)
     local d = duration_new()
     d.secs = s2 + s1
-    d.nsec = rhs.nsec - lhs.nsec
+    d.nsec = rhs.nsec + lhs.nsec
     if d.nsec >= NANOS_PER_SEC then
         d.secs = d.secs + 1
         d.nsec = d.nsec - NANOS_PER_SEC
@@ -124,29 +124,18 @@ local function datetime_add(lhs, rhs)
 end
 
 local function datetime_eq(lhs, rhs)
-    if rhs == nil then
-        return false
-    end
     -- FIXME - timezone?
     return (lhs.secs == rhs.secs) and (lhs.nsec == rhs.nsec)
 end
 
 
 local function datetime_lt(lhs, rhs)
-    if rhs == nil then
-        return false
-    end
-
     -- FIXME - timezone?
     return (lhs.secs < rhs.secs) or
            (lhs.secs == rhs.secs and lhs.nsec < rhs.nsec)
 end
 
 local function datetime_le(lhs, rhs)
-    if rhs == nil then
-        return false
-    end
-
     -- FIXME - timezone?
     return (lhs.secs <= rhs.secs) or
            (lhs.secs == rhs.secs and lhs.nsec <= rhs.nsec)
