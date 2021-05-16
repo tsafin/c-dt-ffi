@@ -1,4 +1,4 @@
-all: make
+all: check make test
 
 make: c-dt.so
 
