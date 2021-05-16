@@ -1,6 +1,7 @@
 CMakeFiles/
 obj-*/
 /.vscode/
+*.code-workspace
 /build*
 /.rocks
 CMakeCache.txt

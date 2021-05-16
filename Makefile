@@ -6,3 +6,6 @@ make:
 
 check:
 	luacheck --codes .
+
+test: make
+	busted --lua=tarantool
