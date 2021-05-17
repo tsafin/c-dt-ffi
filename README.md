@@ -1,4 +1,4 @@
-![Build module](https://github.com/tsafin/c-dt-ffi/workflows/Build%20LuaRocks%20module%20for%20Tarantool/badge.svg)
+[![Build LuaRocks module on Linux](https://github.com/tsafin/c-dt-ffi/actions/workflows/luarocks-build-linux.yml/badge.svg)](https://github.com/tsafin/c-dt-ffi/actions/workflows/luarocks-build-linux.yml) [![Build LuaRocks module on MacOSX](https://github.com/tsafin/c-dt-ffi/actions/workflows/luarocks-build-macos.yml/badge.svg)](https://github.com/tsafin/c-dt-ffi/actions/workflows/luarocks-build-macos.yml)
 
 # LuaJIT module for datetime parsing and manipulations
 
