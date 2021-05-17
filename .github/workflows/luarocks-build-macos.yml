@@ -1,0 +1,44 @@
+name: Build LuaRocks module on MacOSX
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    # See: https://docs.github.com/en/actions/configuring-and-managing-workflows/configuring-a-workflow#configuring-a-build-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # fail-fast: false
+      matrix:
+        os: [macos-latest]
+
+    steps:
+      - name: checkout c-dt-ffi
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install build prerequisites
+        run: |
+          brew install lua@5.1 luajit luarocks
+
+      - name: Install luacheck and busted
+        run: |
+          luarocks install --lua-dir=$(brew --prefix lua@5.1) LuaFileSystem
+          luarocks install luacheck
+          luarocks install --lua-dir=$(brew --prefix lua@5.1) busted
+
+      - name: Check via luacheck
+        run: |
+          luacheck --codes .
+
+      - name: luarocks make and pack
+        run: |
+          luarocks make --lua-dir=$(brew --prefix lua@5.1) --local
+          luarocks pack --lua-dir=$(brew --prefix lua@5.1) --local c-dt-ffi
+
+      - name: test with busted
+        run: |
+          LUA_PATH="$HOME/.luarocks/share/lua/5.1/?/init.lua;$HOME/.luarocks/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;/usr/local/share/lua/5.1/?.lua;" \
+          LUA_CPATH="$HOME/.luarocks/lib/lua/5.1/?.so;/usr/local/lib/lua/5.1/?.so" \
+          $(luarocks config --lua-dir=$(brew --prefix lua@5.1) variables.SCRIPTS_DIR)/busted --lua=luajit

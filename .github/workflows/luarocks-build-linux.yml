@@ -1,4 +1,4 @@
-name: Build LuaRocks module for Tarantool
+name: Build LuaRocks module on Linux
 
 on: [push, pull_request]
 
@@ -9,7 +9,7 @@ jobs:
     strategy:
       # fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
 
     steps:
       - name: checkout c-dt-ffi
@@ -18,33 +18,15 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-
-      - name: Install tarantool build prerequisites for Mac
-        if: runner.os == 'macOS'
-        run: |
-          brew install lua@5.1 luajit luarocks
-
-      - name: Install tarantool build prerequisites for Linux
-        if: runner.os == 'Linux'
+      - name: Install build prerequisites
         run: |
           sudo apt-get install -y luarocks luajit libluajit-5.1-dev
 
-      - name: Install luacheck and busted (Linux)
-        if: runner.os == 'Linux'
+      - name: Install luacheck and busted
         run: |
           sudo luarocks install LuaFileSystem
           sudo luarocks install luacheck
-          sudo luarocks install --local busted
-          luarocks show busted
-
-      - name: Install luacheck and busted (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          luarocks install --lua-dir=$(brew --prefix lua@5.1) LuaFileSystem
-          luarocks install luacheck
-          luarocks install --lua-dir=$(brew --prefix lua@5.1) --local busted
-          # luarocks list --lua-dir=$(brew --prefix lua@5.1)
-          luarocks show --lua-dir=$(brew --prefix lua@5.1) busted
+          sudo luarocks install busted
 
       - name: Check via luacheck
         run: |
@@ -59,10 +41,9 @@ jobs:
         run: |
           LUA_PATH="$HOME/.luarocks/share/lua/5.1/?/init.lua;$HOME/.luarocks/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;/usr/local/share/lua/5.1/?.lua;" \
           LUA_CPATH="$HOME/.luarocks/lib/lua/5.1/?.so;/usr/local/lib/lua/5.1/?.so" \
-          $HOME/.luarocks/bin/busted --lua=luajit
+          busted --lua=luajit
 
       - name: publishing linux artifact
-        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v2
         with:
           name: c-dt-ffi-scm-1.linux-x86_64.rock
