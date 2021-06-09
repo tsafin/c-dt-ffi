@@ -68,6 +68,10 @@ ffi.cdef [[
     size_t dt_parse_iso_zone_extended (const char *str, size_t len, int *offset);
     size_t dt_parse_iso_zone_lenient  (const char *str, size_t len, int *offset);
 
+    // dt_tm.h
+    dt_t    dt_from_struct_tm  (const struct tm *tm);
+    void    dt_to_struct_tm    (dt_t dt, struct tm *tm);
+
     // datetime with timezone
     struct t_datetime_tz {
         int secs;
@@ -80,7 +84,90 @@ ffi.cdef [[
         int nsec;
     };
 
+    // <asm-generic/posix_types.h>
+    typedef long            __kernel_long_t;
+    typedef unsigned long   __kernel_ulong_t;
+    // /usr/include/x86_64-linux-gnu/bits/types/time_t.h
+    typedef long            time_t;
+
+
+    // <time.h>
+    typedef __kernel_long_t	__kernel_time_t;
+    typedef __kernel_long_t	__kernel_suseconds_t;
+
+    struct timespec {
+        __kernel_time_t	        tv_sec;     /* seconds */
+        long                    tv_nsec;    /* nanoseconds */
+    };
+
+    struct timeval {
+        __kernel_time_t	        tv_sec;	    /* seconds */
+        __kernel_suseconds_t    tv_usec;    /* microseconds */
+    };
+
+    struct timezone {
+        int	tz_minuteswest;     /* minutes west of Greenwich */
+        int	tz_dsttime;	        /* type of dst correction */
+    };
+
+    // /usr/include/x86_64-linux-gnu/sys/time.h
+    typedef struct timezone * __timezone_ptr_t;
+
+    /* Get the current time of day and timezone information,
+       putting it into *TV and *TZ.  If TZ is NULL, *TZ is not filled.
+       Returns 0 on success, -1 on errors.
+
+       NOTE: This form of timezone information is obsolete.
+       Use the functions and variables declared in <time.h> instead.  */
+    int gettimeofday (struct timeval *__tv, struct timezone * __tz);
+
+    // /usr/include/x86_64-linux-gnu/bits/types/struct_tm.h
+    /* ISO C `broken-down time' structure.  */
+    struct tm
+    {
+        int tm_sec;	        /* Seconds.	[0-60] (1 leap second) */
+        int tm_min;	        /* Minutes.	[0-59] */
+        int tm_hour;        /* Hours.	[0-23] */
+        int tm_mday;        /* Day.		[1-31] */
+        int tm_mon;	        /* Month.	[0-11] */
+        int tm_year;        /* Year	- 1900.  */
+        int tm_wday;        /* Day of week.	[0-6] */
+        int tm_yday;        /* Days in year.[0-365]	*/
+        int tm_isdst;       /* DST.		[-1/0/1]*/
+
+        long int tm_gmtoff; /* Seconds east of UTC.  */
+        const char *tm_zone;/* Timezone abbreviation.  */
+    };
+
+    // <time.h>
+    /* Format TP into S according to FORMAT.
+    Write no more than MAXSIZE characters and return the number
+    of characters written, or 0 if it would exceed MAXSIZE.  */
+    size_t strftime (char * __s, size_t __maxsize, const char * __format,
+                     const struct tm * __tp);
+
+    /* Parse S according to FORMAT and store binary time information in TP.
+    The return value is a pointer to the first unparsed character in S.  */
+    char *strptime (const char * __s, const char * __fmt, struct tm *__tp);
+
+    /* Return the `struct tm' representation of *TIMER in UTC,
+    using *TP to store the result.  */
+    struct tm *gmtime_r (const time_t * __timer, struct tm * __tp);
+
+    /* Return the `struct tm' representation of *TIMER in local time,
+    using *TP to store the result.  */
+    struct tm *localtime_r (const time_t * __timer, struct tm * __tp);
+
+    /* Return a string of the form "Day Mon dd hh:mm:ss yyyy\n"
+    that is the representation of TP in this format.  */
+    char *asctime (const struct tm *__tp);
+
+    /* Equivalent to `asctime (localtime (timer))'.  */
+    char *ctime (const time_t *__timer);
+
 ]]
+
+local native = ffi.C
 
 local SECS_PER_DAY = 86400
 local NANOS_PER_SEC = 1000000000
@@ -189,6 +276,14 @@ local function datetime_new_raw(secs, nsec, offset)
     dt_obj.nsec = nsec
     dt_obj.offset = offset
     return dt_obj
+end
+
+local function local_rd(secs)
+    return secs / SECS_PER_DAY
+end
+
+local function local_dt(secs)
+    return cdt.dt_from_rdn(local_rd(secs))
 end
 
 local function mk_timestamp(dt, sp, fp, offset)
@@ -414,28 +509,71 @@ local function datetime_from(o)
     end
 end
 
-local parser = {
-    parse = parse_str,
-    parse_date = parse_date,
-    parse_time = parse_time,
-    parse_zone = parse_zone,
-}
+local function local_now()
+    local p_tv = ffi.new ' struct timeval [1] '
+    local rc = native.gettimeofday(p_tv, nil)
+    assert(rc == 0)
 
-local function datetime_fmt()
+    local secs = p_tv[0].tv_sec
+    local nsec = p_tv[0].tv_usec * 1000
+
+    local p_time = ffi.new 'time_t[1]'
+    local p_tm = ffi.new 'struct tm[1]'
+    native.localtime_r(p_time, p_tm);
+    local dt = cdt.dt_from_struct_tm(p_tm)
+    local ofs = p_tm[0].tm_gmtoff / 60 -- convert seconds to minutes
+
+    return mk_timestamp(dt, secs, nsec, ofs)
+
 end
 
-local format = {
-    fmt = datetime_fmt
-}
+local function asctime(o)
+    assert(ffi.typeof(o) == datetime_t)
+    local p_tm = ffi.new 'struct tm[1]'
+    cdt.dt_to_struct_tm(local_dt(o.secs), p_tm)
+    return ffi.string(native.asctime(p_tm))
+end
+
+local function ctime(o)
+    assert(ffi.typeof(o) == datetime_t)
+    local p_time = ffi.new 'time_t[1]'
+    p_time[0] = o.secs
+    return ffi.string(native.ctime(p_time))
+end
+
+local function strftime(fmt, o)
+    assert(ffi.typeof(o) == datetime_t)
+    local sz = 50
+    local buff = ffi.new('char[?]', sz)
+    local p_tm = ffi.new 'struct tm[1]'
+    cdt.dt_to_struct_tm(local_dt(o.secs), p_tm)
+    native.strftime(buff, sz, fmt, p_tm)
+    return ffi.string(buff)
+end
+
+-- strftime may be redirected to datetime:fmt("format")
+local function datetime_fmt()
+end
 
 ffi.metatype(duration_t, duration_mt)
 ffi.metatype(datetime_t, datetime_mt)
 
-return setmetatable({
+return setmetatable(
+    {
         datetime = datetime_new,
         delta = duration_new,
-        parser = parser,
-        format = format,
+
+        parse = parse_str,
+        parse_date = parse_date,
+        parse_time = parse_time,
+        parse_zone = parse_zone,
+        fmt = datetime_fmt,
+
+        now = local_now,
+    -- strptime = strptime;
+        strftime = strftime,
+        asctime = asctime,
+        ctime = ctime,
     }, {
         __call = function(self, ...) return datetime_from(...) end
     }
